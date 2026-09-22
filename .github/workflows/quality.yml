@@ -1,0 +1,26 @@
+name: Quality checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  source-policy:
+    name: Style and dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Check Pascal style
+        run: node Tools/check-pascal-style.js
+
+      - name: Check unit dependencies
+        run: bash Tests/test-unit-dependencies.sh

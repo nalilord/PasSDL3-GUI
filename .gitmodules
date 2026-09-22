@@ -1,0 +1,3 @@
+[submodule "Lib/SDL3"]
+	path = Lib/SDL3
+	url = https://github.com/nalilord/SDL3-for-Pascal.git

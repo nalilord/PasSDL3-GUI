@@ -80,3 +80,25 @@ __recovery/
 
 # Boss dependency manager vendor folder https://github.com/HashLoad/boss
 modules/
+
+# PasSDL3-GUI build and test output
+/Bin/
+*.ppu
+*.compiled
+*.dbg
+*.log
+*.bmp
+
+# Local tools and editor state
+.idea/
+.vscode/
+*.code-workspace
+.DS_Store
+Thumbs.db
+
+# Local environment files and scratch directories
+.env
+.env.*
+!.env.example
+/coverage/
+/tmp/

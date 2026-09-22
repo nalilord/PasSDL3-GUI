@@ -1,0 +1,27 @@
+* text=auto
+
+*.pas text eol=lf
+*.dpr text eol=lf
+*.inc text eol=lf
+*.lpr text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.ini text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+*.bmp binary
+*.gif binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+
+# Preserve Unicode reference inputs byte-for-byte.
+Tests/Unicode/** -text -whitespace
