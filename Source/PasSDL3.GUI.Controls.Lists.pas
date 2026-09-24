@@ -852,7 +852,8 @@ begin
         if FContentDragging then
           SetScrollY(FContentStartScrollY + FContentStartY - AEvent.Position.Y);
         AEvent.Handled:=True;
-      end else if FDraggingScrollBar then
+      end
+      else if FDraggingScrollBar then
       begin
         Track:=GetScrollBarRect;
         Thumb:=GetScrollThumbRect;
@@ -871,7 +872,8 @@ begin
         FContentPointerDown:=False;
         FContentDragging:=False;
         AEvent.Handled:=True;
-      end else if FDraggingScrollBar then
+      end
+      else if FDraggingScrollBar then
       begin
         FDraggingScrollBar:=False;
         AEvent.Handled:=True;
