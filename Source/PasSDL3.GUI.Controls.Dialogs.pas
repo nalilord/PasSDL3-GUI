@@ -155,6 +155,7 @@ begin
   FButtonPanel.AutoSizeToContent:=False;
   FButtonPanel.BackgroundColor:=GuiColor(0, 0, 0, 0);
   FButtonPanel.BorderColor:=GuiColor(0, 0, 0, 0);
+  FButtonPanel.Visible:=False;
   inherited Add(FButtonPanel);
 end;
 
@@ -219,6 +220,7 @@ begin
     FCancelButton:=Result;
 
   FButtonPanel.Add(Result);
+  FButtonPanel.Visible:=True;
   FButtonResults.Add(Pointer(NativeInt(AModalResult)));
 end;
 
@@ -682,8 +684,11 @@ begin
     DrawControlText(ACanvas, FMessage, MessageRect, Style.TextColor, ghtaLeft, gvtaTop);
   end;
 
-  SeparatorRect:=GuiRect(Rect.Left, Rect.Top + Rect.Height - 62, Rect.Width, 1);
-  ACanvas.FillRect(SeparatorRect, Style.BorderColor);
+  if FButtonPanel.Visible then
+  begin
+    SeparatorRect:=GuiRect(Rect.Left, Rect.Top + Rect.Height - 62, Rect.Width, 1);
+    ACanvas.FillRect(SeparatorRect, Style.BorderColor);
+  end;
 end;
 
 constructor TGuiModalOverlay.Create;
