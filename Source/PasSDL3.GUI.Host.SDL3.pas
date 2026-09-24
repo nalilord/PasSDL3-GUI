@@ -31,6 +31,9 @@ type
     FTextInputFocusRevision: UInt64;
     FCompositionCancellationRevision: UInt64;
     FManageMouseCursor: Boolean;
+    FTouchActive: Boolean;
+    FTouchDevice: TSDL_TouchID;
+    FTouchFinger: TSDL_FingerID;
     FCursors: array[TGuiMouseCursor] of PSDL_Cursor;
     FCursorTried: array[TGuiMouseCursor] of Boolean;
     procedure SyncMouseCursor;
@@ -43,6 +46,7 @@ type
   public
     constructor Create(ARenderer: PSDL_Renderer; AContext: TGuiContext = nil);
     destructor Destroy; override;
+    procedure CancelInput;
     function ProcessEvent(const ASdlEvent: TSDL_Event): Boolean;
     procedure Resize(AWidth, AHeight: TGuiFloat);
     procedure Render;
@@ -231,18 +235,92 @@ begin
     FContext.Resize(Viewport.w, Viewport.h);
 end;
 
+procedure TGuiSDL3Host.CancelInput;
+begin
+  FTouchActive:=False;
+  FContext.CancelInput;
+  SyncTextInput;
+end;
+
 function TGuiSDL3Host.ProcessEvent(const ASdlEvent: TSDL_Event): Boolean;
 var
   Event: TGuiEvent;
   Converted: TSDL_Event;
   InputControl: TGuiControl;
+  WindowHeight: Integer;
+  WindowWidth: Integer;
 begin
   Result:=False;
+  if Assigned(FWindow) AND
+    ((ASdlEvent.type_=SDL_EVENT_FINGER_DOWN) OR
+      (ASdlEvent.type_=SDL_EVENT_FINGER_UP) OR
+      (ASdlEvent.type_=SDL_EVENT_FINGER_MOTION) OR
+      (ASdlEvent.type_=SDL_EVENT_FINGER_CANCELED)) then
+  begin
+    if ASdlEvent.tfinger.windowID<>SDL_GetWindowID(FWindow) then Exit;
+    if ASdlEvent.type_=SDL_EVENT_FINGER_DOWN then
+    begin
+      if FTouchActive then Exit;
+      FTouchActive:=True;
+      FTouchDevice:=ASdlEvent.tfinger.touchID;
+      FTouchFinger:=ASdlEvent.tfinger.fingerID;
+    end else
+    if NOT FTouchActive OR (FTouchDevice<>ASdlEvent.tfinger.touchID) OR
+      (FTouchFinger<>ASdlEvent.tfinger.fingerID) then Exit;
+
+    if ASdlEvent.type_=SDL_EVENT_FINGER_CANCELED then
+    begin
+      CancelInput;
+      Exit(True);
+    end;
+
+    if NOT SDL_GetWindowSize(FWindow, @WindowWidth, @WindowHeight) OR
+      (WindowWidth<=0) OR (WindowHeight<=0) then
+    begin
+      CancelInput;
+      Exit;
+    end;
+    Converted:=Default(TSDL_Event);
+    case ASdlEvent.type_ of
+      SDL_EVENT_FINGER_DOWN: Converted.type_:=SDL_EVENT_MOUSE_BUTTON_DOWN;
+      SDL_EVENT_FINGER_UP: Converted.type_:=SDL_EVENT_MOUSE_BUTTON_UP;
+    else
+      Converted.type_:=SDL_EVENT_MOUSE_MOTION;
+    end;
+    if Converted.type_=SDL_EVENT_MOUSE_MOTION then
+    begin
+      Converted.motion.windowID:=ASdlEvent.tfinger.windowID;
+      Converted.motion.which:=High(TSDL_MouseID);
+      Converted.motion.state:=SDL_BUTTON_LMASK;
+      Converted.motion.x:=ASdlEvent.tfinger.x*WindowWidth;
+      Converted.motion.y:=ASdlEvent.tfinger.y*WindowHeight;
+      Converted.motion.xrel:=ASdlEvent.tfinger.dx*WindowWidth;
+      Converted.motion.yrel:=ASdlEvent.tfinger.dy*WindowHeight;
+    end else
+    begin
+      Converted.button.windowID:=ASdlEvent.tfinger.windowID;
+      Converted.button.which:=High(TSDL_MouseID);
+      Converted.button.button:=SDL_BUTTON_LEFT;
+      Converted.button.down:=Converted.type_=SDL_EVENT_MOUSE_BUTTON_DOWN;
+      Converted.button.clicks:=1;
+      Converted.button.x:=ASdlEvent.tfinger.x*WindowWidth;
+      Converted.button.y:=ASdlEvent.tfinger.y*WindowHeight;
+      if ASdlEvent.type_=SDL_EVENT_FINGER_UP then FTouchActive:=False;
+    end;
+  end else
+  begin
+    if ((ASdlEvent.type_=SDL_EVENT_MOUSE_BUTTON_DOWN) OR
+        (ASdlEvent.type_=SDL_EVENT_MOUSE_BUTTON_UP) OR
+        (ASdlEvent.type_=SDL_EVENT_MOUSE_MOTION)) AND
+        (ASdlEvent.button.which=High(TSDL_MouseID)) then Exit;
+    Converted:=ASdlEvent;
+  end;
   case ASdlEvent.type_ of
     SDL_EVENT_GAMEPAD_ADDED: OpenGamepad(ASdlEvent.gdevice.which);
     SDL_EVENT_GAMEPAD_REMOVED: CloseGamepad(ASdlEvent.gdevice.which);
     SDL_EVENT_WINDOW_FOCUS_LOST:
-      if ASdlEvent.window.windowID = SDL_GetWindowID(FWindow) then FContext.CancelInput;
+      if Assigned(FWindow) AND
+        (ASdlEvent.window.windowID = SDL_GetWindowID(FWindow)) then CancelInput;
     SDL_EVENT_WINDOW_RESIZED, SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
       if ASdlEvent.window.windowID = SDL_GetWindowID(FWindow) then SyncSize;
   end;
@@ -251,7 +329,6 @@ begin
     SDL_EVENT_MOUSE_WHEEL, SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP, SDL_EVENT_TEXT_INPUT, SDL_EVENT_TEXT_EDITING:
       if Assigned(FWindow) AND (ASdlEvent.window.windowID <> SDL_GetWindowID(FWindow)) then Exit;
   end;
-  Converted:=ASdlEvent;
   if NOT SDL_ConvertEventToRenderCoordinates(FCanvas.Renderer, @Converted) then Exit;
   if GuiEventFromSDL3(Converted, Event) then
   begin

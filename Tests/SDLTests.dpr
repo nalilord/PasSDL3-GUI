@@ -56,6 +56,13 @@ type
     property Value: Integer read FValue write FValue;
     procedure Modified(Sender: TGuiControl);
   end;
+  TTouchProbe = class
+  private
+    FClicks: Integer;
+  public
+    property Clicks: Integer read FClicks;
+    procedure Clicked(Sender: TGuiControl);
+  end;
   TMetricPixelCanvas = class(TGuiSDL3Canvas)
   public
     function MeasureText(const AText: String): TGuiSize;
@@ -109,6 +116,75 @@ procedure TSpinNativeProbe.Modified(Sender: TGuiControl);
 begin
   Inc(FCalls);
   Value:=TGuiSpinEdit(Sender).Value;
+end;
+
+procedure Check(ACondition: Boolean; const AMessage: String); forward;
+
+procedure TTouchProbe.Clicked(Sender: TGuiControl);
+begin
+  Inc(FClicks);
+end;
+
+procedure TestTouchHost(AHost: TGuiSDL3Host; AWindow: PSDL_Window;
+  AButton: TGuiButton);
+var
+  Event: TSDL_Event;
+  Probe: TTouchProbe;
+  procedure Finger(AType: TSDL_EventType; AFinger: TSDL_FingerID);
+  begin
+    Event:=Default(TSDL_Event);
+    Event.type_:=AType;
+    Event.tfinger.windowID:=SDL_GetWindowID(AWindow);
+    Event.tfinger.touchID:=1;
+    Event.tfinger.fingerID:=AFinger;
+    Event.tfinger.x:=0.3;
+    Event.tfinger.y:=0.2;
+    AHost.ProcessEvent(Event);
+  end;
+  procedure Mouse(AType: TSDL_EventType; AWhich: TSDL_MouseID);
+  begin
+    Event:=Default(TSDL_Event);
+    Event.type_:=AType;
+    Event.button.windowID:=SDL_GetWindowID(AWindow);
+    Event.button.which:=AWhich;
+    Event.button.button:=SDL_BUTTON_LEFT;
+    Event.button.x:=120;
+    Event.button.y:=40;
+    AHost.ProcessEvent(Event);
+  end;
+begin
+  Probe:=TTouchProbe.Create;
+  try
+    AButton.OnClick:=Probe.Clicked;
+    Finger(SDL_EVENT_FINGER_DOWN, 1);
+    Finger(SDL_EVENT_FINGER_UP, 1);
+    Check(Probe.Clicks=1,'Raw finger tap clicks once at scaled coordinates');
+    Mouse(SDL_EVENT_MOUSE_BUTTON_DOWN,High(TSDL_MouseID));
+    Mouse(SDL_EVENT_MOUSE_BUTTON_UP,High(TSDL_MouseID));
+    Check(Probe.Clicks=1,'Synthesized touch mouse events are suppressed');
+    Finger(SDL_EVENT_FINGER_DOWN, 1);
+    Finger(SDL_EVENT_FINGER_DOWN, 2);
+    Finger(SDL_EVENT_FINGER_UP, 2);
+    Finger(SDL_EVENT_FINGER_UP, 1);
+    Check(Probe.Clicks=2,'Secondary finger does not duplicate tap');
+    Finger(SDL_EVENT_FINGER_DOWN, 1);
+    Finger(SDL_EVENT_FINGER_CANCELED, 1);
+    Finger(SDL_EVENT_FINGER_UP, 1);
+    Check(Probe.Clicks=2,'Cancelled finger does not click');
+    Finger(SDL_EVENT_FINGER_DOWN, 1);
+    AHost.CancelInput;
+    Finger(SDL_EVENT_FINGER_UP, 1);
+    Check(Probe.Clicks=2,'Closing overlay cancels touch capture');
+    Finger(SDL_EVENT_FINGER_DOWN, 1);
+    Finger(SDL_EVENT_FINGER_UP, 1);
+    Check(Probe.Clicks=3,'Touch capture recovers after cancellation');
+    Mouse(SDL_EVENT_MOUSE_BUTTON_DOWN,0);
+    Mouse(SDL_EVENT_MOUSE_BUTTON_UP,0);
+    Check(Probe.Clicks=4,'Mouse-only touchscreen still clicks');
+  finally
+    AButton.OnClick:=nil;
+    Probe.Free;
+  end;
 end;
 
 function TPixelActivityIndicator.AnimationTime: UInt64;
@@ -2905,7 +2981,11 @@ var
   Window: PSDL_Window;
   Renderer: PSDL_Renderer;
   Host: TGuiSDL3Host;
-  Font, BadFont: TGuiSDLTTFFontRenderer;
+  Font, BadFont, MemoryFont: TGuiSDLTTFFontRenderer;
+  FontBytes: Pointer;
+  FontByteCount: NativeUInt;
+  FontFileUtf8: UTF8String;
+  InvalidFontData: array[0..7] of Byte;
   Fonts: TGuiSDLTTFFontCollection;
   Button: TGuiButton;
   Edit: TGuiEdit;
@@ -2929,6 +3009,8 @@ begin
   Renderer:=nil;
   Host:=nil;
   Font:=nil;
+  MemoryFont:=nil;
+  FontBytes:=nil;
   Fonts:=nil;
   try
     Window:=SDL_CreateWindow('GUI tests', 400, 200, SDL_WINDOW_HIDDEN);
@@ -2978,6 +3060,7 @@ begin
     Event.motion.y:=40;
     Host.ProcessEvent(Event);
     Check(Host.Context.HoveredControl = Button, 'Mouse input converts to renderer coordinates');
+    TestTouchHost(Host,Window,Button);
     Event.motion.windowID:=SDL_GetWindowID(Window) + 1;
     Event.motion.x:=0;
     Host.ProcessEvent(Event);
@@ -3005,6 +3088,24 @@ begin
       SDL_DetachVirtualJoystick(GamepadID);
     end;
     Font:=TGuiSDLTTFFontRenderer.Create(GuiDefaultFontFile, 16);
+    FontFileUtf8:=UTF8String(GuiDefaultFontFile);
+    FontBytes:=SDL_LoadFile(PAnsiChar(FontFileUtf8),@FontByteCount);
+    Check(Assigned(FontBytes) AND (FontByteCount>0),'Load font bytes for memory constructor');
+    MemoryFont:=TGuiSDLTTFFontRenderer.CreateFromMemory(FontBytes,FontByteCount,16);
+    SDL_free(FontBytes);
+    FontBytes:=nil;
+    Check(MemoryFont.MeasureText('embedded').Width>0,'Copied memory font survives source release');
+    MemoryFont.Free;
+    MemoryFont:=nil;
+    FillChar(InvalidFontData,SizeOf(InvalidFontData),0);
+    Failed:=False;
+    try
+      BadFont:=TGuiSDLTTFFontRenderer.CreateFromMemory(@InvalidFontData[0],SizeOf(InvalidFontData),16);
+      BadFont.Free;
+    except
+      on E: Exception do Failed:=True;
+    end;
+    Check(Failed,'Invalid memory font fails without hiding live font');
     TestTextPlacement(Renderer, Font);
     Failed:=False;
     try
@@ -3135,7 +3236,10 @@ begin
   finally
     Host.Free;
     Fonts.Free;
+    MemoryFont.Free;
     Font.Free;
+    SDL_free(FontBytes);
+    Check(TTF_WasInit=0,'Font construction and destruction balance SDL_ttf initialization');
     if Assigned(Renderer) then SDL_DestroyRenderer(Renderer);
     if Assigned(Window) then SDL_DestroyWindow(Window);
     SDL_Quit;

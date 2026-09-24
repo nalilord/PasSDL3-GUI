@@ -46,6 +46,7 @@ type
   private
     FFont: PTTF_Font;
     FAcquiredTTF: Boolean;
+    FEmbeddedFontData: TBytes;
     FCache: array[0..127] of TGuiTextCacheEntry;
     FNextCache: Integer;
     FCacheHits: UInt64;
@@ -61,6 +62,8 @@ type
   public
     constructor Create(const AFontFile: String; APointSize: Single); overload;
     constructor Create(const ASpec: TGuiFontSpec); overload;
+    { Copies ASize bytes; callers may release AData after construction. }
+    constructor CreateFromMemory(AData: Pointer; ASize: NativeUInt; APointSize: Single);
     destructor Destroy; override;
     procedure ClearCache;
     function MeasureText(const AText: String): TGuiSize;
@@ -139,6 +142,30 @@ begin
   begin
     raise Exception.CreateFmt('TTF_OpenFont failed for "%s": %s', [ASpec.FileName, String(SDL_GetError)]);
   end;
+end;
+
+constructor TGuiSDLTTFFontRenderer.CreateFromMemory(AData: Pointer;
+  ASize: NativeUInt; APointSize: Single);
+var
+  FontStream: PSDL_IOStream;
+begin
+  inherited Create;
+  if (AData = nil) OR (ASize = 0) OR (ASize > NativeUInt(High(Integer))) then
+    raise Exception.Create('Embedded font data is missing or too large');
+
+  SetLength(FEmbeddedFontData, Integer(ASize));
+  Move(AData^, FEmbeddedFontData[0], Integer(ASize));
+  AcquireTTF;
+  FAcquiredTTF:=True;
+  FSpec:=GuiFontSpec('', '', APointSize);
+  FCenterYOffset:=FSpec.CenterYOffset;
+  FontStream:=SDL_IOFromConstMem(@FEmbeddedFontData[0], ASize);
+  if NOT Assigned(FontStream) then
+    raise Exception.CreateFmt('SDL_IOFromConstMem failed: %s', [String(SDL_GetError)]);
+
+  FFont:=TTF_OpenFontIO(FontStream, True, APointSize);
+  if NOT Assigned(FFont) then
+    raise Exception.CreateFmt('TTF_OpenFontIO failed: %s', [String(SDL_GetError)]);
 end;
 
 destructor TGuiSDLTTFFontRenderer.Destroy;
