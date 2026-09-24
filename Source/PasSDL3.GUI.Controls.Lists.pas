@@ -41,6 +41,8 @@ type
     FItemHeight: TGuiFloat;
     FScrollY, FDragStartY, FDragStartScrollY: TGuiFloat;
     FDraggingScrollBar: Boolean;
+    FDragScrollEnabled, FContentPointerDown, FContentDragging: Boolean;
+    FContentStartY, FContentStartScrollY: TGuiFloat;
     procedure SetItemHeight(AValue: TGuiFloat);
     procedure SetScrollY(AValue: TGuiFloat);
     function GetMaxScrollY: TGuiFloat;
@@ -67,6 +69,7 @@ type
     property OnSelect: TGuiNotifyEvent read FOnSelect write FOnSelect;
     property ScrollY: TGuiFloat read FScrollY write SetScrollY;
     property MaxScrollY: TGuiFloat read GetMaxScrollY;
+    property DragScrollEnabled: Boolean read FDragScrollEnabled write FDragScrollEnabled;
   end;
 
   TGuiWheelWrapMode = (gwwAuto, gwwEnabled, gwwDisabled);
@@ -607,6 +610,8 @@ begin
   if FItemHeight=AValue then Exit;
   FItemHeight:=AValue;
   FDraggingScrollBar:=False;
+  FContentPointerDown:=False;
+  FContentDragging:=False;
   EnsureSelectionVisible;
   InvalidateLayout;
 end;
@@ -796,6 +801,8 @@ begin
   if (AEvent.Kind IN [gekCancel,gekBlur]) OR NOT Enabled then
   begin
     FDraggingScrollBar:=False;
+    FContentPointerDown:=False;
+    FContentDragging:=False;
     Exit;
   end;
   SetScrollY(FScrollY);
@@ -825,13 +832,27 @@ begin
         Index:=ItemIndexAtPoint(AEvent.Position);
         if Index >= 0 then
         begin
-          SelectedIndex:=Index;
+          if FDragScrollEnabled AND (MaxScrollY > 0) then
+          begin
+            FContentPointerDown:=True;
+            FContentDragging:=False;
+            FContentStartY:=AEvent.Position.Y;
+            FContentStartScrollY:=FScrollY;
+          end else
+            SelectedIndex:=Index;
           AEvent.Handled:=True;
         end;
       end;
     end;
     gekMouseMove:
-      if FDraggingScrollBar then
+      if FContentPointerDown then
+      begin
+        if Abs(AEvent.Position.Y - FContentStartY) >= 8 then
+          FContentDragging:=True;
+        if FContentDragging then
+          SetScrollY(FContentStartScrollY + FContentStartY - AEvent.Position.Y);
+        AEvent.Handled:=True;
+      end else if FDraggingScrollBar then
       begin
         Track:=GetScrollBarRect;
         Thumb:=GetScrollThumbRect;
@@ -840,7 +861,17 @@ begin
         AEvent.Handled:=True;
       end;
     gekMouseUp:
-      if FDraggingScrollBar then
+      if FContentPointerDown then
+      begin
+        if NOT FContentDragging then
+        begin
+          Index:=ItemIndexAtPoint(AEvent.Position);
+          if Index >= 0 then SelectedIndex:=Index;
+        end;
+        FContentPointerDown:=False;
+        FContentDragging:=False;
+        AEvent.Handled:=True;
+      end else if FDraggingScrollBar then
       begin
         FDraggingScrollBar:=False;
         AEvent.Handled:=True;

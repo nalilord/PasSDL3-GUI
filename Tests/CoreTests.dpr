@@ -8030,6 +8030,29 @@ begin
     List.Paint(Canvas);
     Check((Canvas.FirstClip.Width = 198) AND (Canvas.ContentClip.Width = 180) AND (Canvas.ClipDepth = 0),
       'List row backgrounds span the interior but text excludes scrollbar lane');
+    List.DragScrollEnabled:=True;
+    List.ScrollY:=0;
+    List.SelectedIndex:=0;
+    Event:=Default(TGuiEvent);
+    Event.Kind:=gekMouseDown;
+    Event.Button:=gmbLeft;
+    Event.Position:=GuiPoint(30, 60);
+    Context.ProcessEvent(Event);
+    Check(List.SelectedIndex = 0, 'Drag-scroll list defers tap selection');
+    Event.Kind:=gekMouseMove;
+    Event.Position:=GuiPoint(30, 10);
+    Context.ProcessEvent(Event);
+    Check((List.ScrollY = 50) AND (List.SelectedIndex = 0),
+      'Content drag scrolls without selecting');
+    Event.Kind:=gekMouseUp;
+    Context.ProcessEvent(Event);
+    Check(List.SelectedIndex = 0, 'Content drag release does not select');
+    Event.Kind:=gekMouseDown;
+    Event.Position:=GuiPoint(30, 40);
+    Context.ProcessEvent(Event);
+    Event.Kind:=gekMouseUp;
+    Context.ProcessEvent(Event);
+    Check(List.SelectedIndex = 4, 'Tap selects through the new scroll offset');
     List.Items.Clear;
     Check((List.SelectedIndex = -1) AND (List.ScrollY = 0) AND (List.MaxScrollY = 0), 'Clearing list items resets selection and scrollbar');
     List.ItemHeight:=0;
